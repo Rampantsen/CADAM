@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     genai_timeout_seconds: int = 120
     deepseek_v4_pro_api_key: str | None = None
     gpt55_api_key: str | None = None
-    gpt55_max_completion_tokens: int = 16000
+    gpt55_max_completion_tokens: int = 20000
     gpt55_reasoning_effort: str | None = None
     openrouter_api_url: str = "https://openrouter.ai/api/v1/chat/completions"
     openrouter_api_key: str | None = Field(

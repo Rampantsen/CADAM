@@ -584,7 +584,7 @@ Deno.serve(async (req) => {
       {
         model: 'claude-sonnet-4-5-20250929',
         system: systemPrompt,
-        max_tokens: 16000,
+        max_tokens: 20000,
         messages: newMessages,
         tools: tools,
         stream: true,
