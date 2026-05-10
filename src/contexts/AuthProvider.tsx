@@ -5,6 +5,18 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import posthog from 'posthog-js';
 import { AuthContext, type BillingStatus, getLevel } from './AuthContext';
+import {
+  clearLocalAccessToken,
+  getLocalAccessToken,
+  isLocalApiEnabled,
+  localApiJson,
+  loginLocal,
+  LocalAuthResponse,
+  LocalAuthUser,
+  LocalProfile,
+  registerLocal,
+  setLocalAccessToken,
+} from '@/lib/localApi';
 
 const ensurePermission = async () => {
   if (typeof window === 'undefined' || !('Notification' in window)) {
@@ -16,10 +28,64 @@ const ensurePermission = async () => {
   return perm === 'granted';
 };
 
+const LOCAL_SESSION_KEY = 'cadam_local_session';
+
+function toLocalSession(auth: LocalAuthResponse): Session {
+  return {
+    access_token: auth.access_token,
+    token_type: auth.token_type,
+    expires_in: 60 * 60 * 24 * 7,
+    expires_at: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7,
+    refresh_token: '',
+    user: toSupabaseUser(auth.user, auth.profile),
+  } as Session;
+}
+
+function toSupabaseUser(user: LocalAuthUser, profile?: LocalProfile): User {
+  return {
+    id: user.id,
+    aud: 'authenticated',
+    role: 'authenticated',
+    email: user.username,
+    email_confirmed_at: user.created_at,
+    phone: '',
+    confirmed_at: user.created_at,
+    last_sign_in_at: user.updated_at,
+    app_metadata: {},
+    user_metadata: {
+      username: user.username,
+      full_name: profile?.full_name,
+    },
+    identities: [],
+    created_at: user.created_at,
+    updated_at: user.updated_at,
+    is_anonymous: false,
+  } as User;
+}
+
+function persistLocalAuth(auth: LocalAuthResponse) {
+  const session = toLocalSession(auth);
+  setLocalAccessToken(auth.access_token);
+  localStorage.setItem(LOCAL_SESSION_KEY, JSON.stringify(session));
+  return session;
+}
+
+function readStoredSession() {
+  const key = isLocalApiEnabled ? LOCAL_SESSION_KEY : 'session';
+  const rawSession = localStorage.getItem(key);
+  if (!rawSession) return null;
+
+  try {
+    return JSON.parse(rawSession) as Session | null;
+  } catch {
+    localStorage.removeItem(key);
+    if (isLocalApiEnabled) clearLocalAccessToken();
+    return null;
+  }
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [session, setSession] = useState<Session | null>(
-    JSON.parse(localStorage.getItem('session') ?? 'null'),
-  );
+  const [session, setSession] = useState<Session | null>(readStoredSession);
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const navigate = useNavigate();
@@ -28,6 +94,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Initialize auth state and set up session listener
   useEffect(() => {
+    if (isLocalApiEnabled) {
+      const initializeLocalAuth = async () => {
+        const token = getLocalAccessToken();
+        if (!token) {
+          setSession(null);
+          setUser(null);
+          setIsLoading(false);
+          return;
+        }
+
+        try {
+          const [localUser, localProfile] = await Promise.all([
+            localApiJson<LocalAuthUser>('/api/v1/auth/me'),
+            localApiJson<LocalProfile>('/api/v1/profile'),
+          ]);
+          const localSession = {
+            access_token: token,
+            token_type: 'bearer',
+            expires_in: 60 * 60 * 24 * 7,
+            expires_at: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7,
+            refresh_token: '',
+            user: toSupabaseUser(localUser, localProfile),
+          } as Session;
+          setSession(localSession);
+          setUser(localSession.user);
+          localStorage.setItem(LOCAL_SESSION_KEY, JSON.stringify(localSession));
+        } catch {
+          clearLocalAccessToken();
+          localStorage.removeItem(LOCAL_SESSION_KEY);
+          setSession(null);
+          setUser(null);
+        } finally {
+          setIsLoading(false);
+        }
+      };
+
+      void initializeLocalAuth();
+      return;
+    }
+
     const initializeAuth = async () => {
       try {
         const {
@@ -57,14 +163,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => subscription.unsubscribe();
   }, [navigate]);
 
-  // Poll adam-billing for subscription state + token balances. 30s cadence
-  // matches the prior user_extradata poll — adam-billing is the source of
-  // truth; no local realtime channel anymore.
+  // Poll billing-status for subscription state + token balances. In the
+  // self-hosted build this returns unlimited local credits.
   const { data: billing, isLoading: isBillingLoading } = useQuery({
     queryKey: ['billing', 'status'],
     enabled: !!user,
     refetchInterval: 30000,
     queryFn: async (): Promise<BillingStatus> => {
+      if (isLocalApiEnabled) {
+        return localApiJson<BillingStatus>('/api/v1/billing/status');
+      }
       const { data, error } = await supabase.functions.invoke('billing-status');
       if (error) throw error;
       return data as BillingStatus;
@@ -75,6 +183,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const { data: profile, isLoading: isProfileLoading } = useQuery({
     queryKey: ['profile', user?.id],
     queryFn: async () => {
+      if (isLocalApiEnabled) {
+        return localApiJson<LocalProfile>('/api/v1/profile');
+      }
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
@@ -94,7 +205,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Set up real-time subscription for meshes table to update meshData immediately and notify the user
   useEffect(() => {
-    if (!user) {
+    if (!user || isLocalApiEnabled) {
       return;
     }
 
@@ -168,6 +279,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [user, isBillingLoading, billing, profile, isProfileLoading]);
 
   const signIn = async (email: string, password: string) => {
+    if (isLocalApiEnabled) {
+      const localAuth = await loginLocal(email, password);
+      const localSession = persistLocalAuth(localAuth);
+      setSession(localSession);
+      setUser(localSession.user);
+      queryClient.invalidateQueries();
+      return;
+    }
+
     const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
@@ -176,6 +296,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signUp = async (email: string, password: string, name: string) => {
+    if (isLocalApiEnabled) {
+      const localAuth = await registerLocal(email, password, name);
+      const localSession = persistLocalAuth(localAuth);
+      setSession(localSession);
+      setUser(localSession.user);
+      queryClient.invalidateQueries();
+      return;
+    }
+
     const { error: signUpError } = await supabase.auth.signUp({
       email,
       password,
@@ -185,11 +314,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signOut = async () => {
+    if (isLocalApiEnabled) {
+      clearLocalAccessToken();
+      localStorage.removeItem(LOCAL_SESSION_KEY);
+      setSession(null);
+      setUser(null);
+      queryClient.clear();
+      return;
+    }
+
     const { error } = await supabase.auth.signOut();
     if (error) throw error;
   };
 
   const signInWithMagicLink = async (email: string) => {
+    if (isLocalApiEnabled) {
+      throw new Error('Magic link sign-in is not available in local mode.');
+    }
+
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: { shouldCreateUser: true },
@@ -198,6 +340,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const verifyOtp = async (email: string, token: string) => {
+    if (isLocalApiEnabled) {
+      throw new Error('OTP verification is not available in local mode.');
+    }
+
     const { error } = await supabase.auth.verifyOtp({
       email,
       token,
@@ -207,11 +353,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const resetPassword = async (email: string) => {
+    if (isLocalApiEnabled) {
+      throw new Error('Password reset email is not available in local mode.');
+    }
+
     const { error } = await supabase.auth.resetPasswordForEmail(email);
     if (error) throw error;
   };
 
   const updatePassword = async (password: string) => {
+    if (isLocalApiEnabled) {
+      throw new Error('Password updates are not implemented in local mode yet.');
+    }
+
     const { error } = await supabase.auth.updateUser({ password });
     if (error) throw error;
   };

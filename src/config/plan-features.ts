@@ -1,6 +1,5 @@
-// Marketing copy for each plan tier — price, name, and token amount come
-// from the billing service (/v1/products), but the bullets below are a
-// product decision that doesn't belong in the billing catalog.
+// Marketing copy for each plan tier. Self-hosted deployments use unlimited
+// local credits, but these labels remain for hosted/product builds.
 
 export type PlanLevel = 'free' | 'standard' | 'pro';
 

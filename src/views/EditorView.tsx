@@ -11,6 +11,7 @@ import { MessageItem } from '../types/misc.ts';
 import { useEffect, useState } from 'react';
 import { CurrentMessageContext } from '@/contexts/CurrentMessageContext';
 import { SelectedItemsContext } from '@/contexts/SelectedItemsContext';
+import { isLocalApiEnabled, localApiRequestJson } from '@/lib/localApi';
 
 export default function EditorView() {
   const { id: conversationId } = useParams();
@@ -28,6 +29,12 @@ export default function EditorView() {
       if (!conversationId) {
         throw new Error('Conversation ID is required');
       }
+      if (isLocalApiEnabled) {
+        return localApiRequestJson<Conversation>(
+          `/api/v1/conversations/${conversationId}`,
+        );
+      }
+
       const { data, error } = await supabase
         .from('conversations')
         .select('*')
@@ -47,6 +54,22 @@ export default function EditorView() {
   const { mutate: updateConversation, mutateAsync: updateConversationAsync } =
     useMutation({
       mutationFn: async (conversation: Conversation) => {
+        if (isLocalApiEnabled) {
+          return localApiRequestJson<Conversation, Partial<Conversation>>(
+            `/api/v1/conversations/${conversation.id}`,
+            {
+              method: 'PATCH',
+              body: {
+                title: conversation.title,
+                type: conversation.type,
+                privacy: conversation.privacy,
+                settings: conversation.settings,
+                current_message_leaf_id: conversation.current_message_leaf_id,
+              },
+            },
+          );
+        }
+
         const { data, error } = await supabase
           .from('conversations')
           .update(conversation)

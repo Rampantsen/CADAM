@@ -1,12 +1,54 @@
+import { useConversation } from '@/contexts/ConversationContext';
+import {
+  downloadLocalConversationFile,
+  isLocalApiEnabled,
+  listLocalConversationFiles,
+} from '@/lib/localApi';
 import { supabase } from '@/lib/supabase';
 import { useQuery } from '@tanstack/react-query';
 
 export const useGlbPreview = ({ id }: { id?: string }) => {
+  const { conversation } = useConversation();
+
   const query = useQuery({
-    queryKey: ['preview', id],
+    queryKey: [
+      'preview',
+      isLocalApiEnabled ? 'local' : 'supabase',
+      conversation.id,
+      id,
+    ],
     enabled: !!id,
     queryFn: async () => {
       if (!id) return null;
+
+      if (isLocalApiEnabled) {
+        const files = await listLocalConversationFiles(conversation.id);
+        const preview = files.previews
+          .filter(
+            (item) => item.mesh_id === id && item.status === 'success',
+          )
+          .sort(
+            (a, b) =>
+              new Date(b.updated_at).getTime() -
+              new Date(a.updated_at).getTime(),
+          )[0];
+
+        if (!preview) return null;
+
+        const downloadStart = Date.now();
+        const previewBlob = await downloadLocalConversationFile(
+          conversation.id,
+          'previews',
+          preview.id,
+        );
+        const downloadEnd = Date.now();
+        const downloadTime = downloadEnd - downloadStart;
+
+        return {
+          blob: previewBlob,
+          updatedAt: new Date(preview.updated_at).getTime() + downloadTime,
+        };
+      }
 
       // Get most recent successful preview (handles multiple previews per mesh)
       const { data: previews, error: previewError } = await supabase

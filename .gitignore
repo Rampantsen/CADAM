@@ -31,3 +31,12 @@ dist-ssr
 # other secret files
 .env.local
 .env.langfuse
+
+# Local FastAPI backend runtime
+__pycache__/
+*.py[cod]
+backend/.env
+backend/.venv
+backend/cadam.sqlite3
+backend/cadam.sqlite3-*
+backend/data/

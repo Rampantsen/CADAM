@@ -1,4 +1,10 @@
 import { useAuth } from '@/contexts/AuthContext';
+import {
+  isLocalApiEnabled,
+  localApiRequestJson,
+  localApiJson,
+  localApiUrl,
+} from '@/lib/localApi';
 import { supabase } from '@/lib/supabase';
 import { Profile } from '@shared/types';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -9,6 +15,10 @@ export function useProfile() {
   return useQuery({
     queryKey: ['profile', user?.id],
     queryFn: async () => {
+      if (isLocalApiEnabled) {
+        return localApiJson<Profile>('/api/v1/profile');
+      }
+
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
@@ -33,6 +43,10 @@ export function useAvatarUrl(avatarPath: string | null | undefined) {
     queryFn: async () => {
       if (!avatarPath) return null;
 
+      if (isLocalApiEnabled) {
+        return localApiUrl(avatarPath);
+      }
+
       // Download the file to get a blob URL that's cached by React Query
       const { data, error } = await supabase.storage
         .from('images')
@@ -56,6 +70,16 @@ export function useUpdateProfile() {
 
   return useMutation({
     mutationFn: async (profile: Partial<Profile>) => {
+      if (isLocalApiEnabled) {
+        return localApiRequestJson<Profile, Partial<Profile>>(
+          '/api/v1/profile',
+          {
+            method: 'PATCH',
+            body: profile,
+          },
+        );
+      }
+
       const { data, error } = await supabase
         .from('profiles')
         .update({
@@ -89,6 +113,9 @@ export function useUploadAvatar() {
   return useMutation({
     mutationFn: async (file: File) => {
       if (!user) throw new Error('User not authenticated');
+      if (isLocalApiEnabled) {
+        throw new Error('Avatar upload is not implemented in local mode yet.');
+      }
 
       // Validate file type
       const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];

@@ -25,7 +25,7 @@ const supabaseClient = getServiceRoleSupabaseClient();
 
 /**
  * Deletes the authenticated user account.
- * - Cancels any active subscription via adam-billing (no-op if none)
+ * - Cancels any active subscription via the billing adapter (no-op if none)
  * - Removes storage items in the background
  * - Deletes the auth user via service role
  */
@@ -71,7 +71,7 @@ Deno.serve(async (req) => {
     const status = err instanceof BillingClientError ? err.status : 502;
     logApiError(err, {
       functionName: 'delete-user',
-      apiName: 'adam-billing cancel-subscription',
+      apiName: 'billing cancel-subscription',
       statusCode: status,
       userId,
     });

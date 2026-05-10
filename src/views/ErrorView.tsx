@@ -6,6 +6,12 @@ import { useEffect } from 'react';
 export function ErrorView() {
   const error = useRouteError();
   const navigate = useNavigate();
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === 'string'
+        ? error
+        : null;
 
   useEffect(() => {
     Sentry.captureException(error);
@@ -21,6 +27,11 @@ export function ErrorView() {
         <br />
         Please feel free to reach out to us so that we can resolve this issue.
       </p>
+      {import.meta.env.DEV && message && (
+        <pre className="max-w-2xl whitespace-pre-wrap rounded-md bg-adam-bg-dark p-4 text-left text-sm text-red-300">
+          {message}
+        </pre>
+      )}
       <Button onClick={() => navigate('/')}>Go to Home</Button>
     </div>
   );

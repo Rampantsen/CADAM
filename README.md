@@ -82,19 +82,17 @@ cd CADAM
 # Install dependencies
 npm install
 
-# Start Supabase
-npx supabase start
-npx supabase functions serve --no-verify-jwt
-
-# Start the development server
-npm run dev
+# Start the local FastAPI backend and Vite frontend
+npm run dev:local
 ```
+
+The local FastAPI backend runs on `http://127.0.0.1:8000`; the frontend runs on
+`http://localhost:6000/cadam`.
 
 ## 📋 Prerequisites
 
 - Node.js and npm
-- Supabase CLI
-- ngrok (for local webhook development)
+- Python 3.11+
 
 ## 🔧 Setting Up Environment Variables
 
@@ -103,45 +101,23 @@ npm run dev
 - Copy `.env.local.template` to `.env.local`
 - Update all required keys in `.env.local`:
   ```
-  VITE_SUPABASE_ANON_KEY="<Test Anon Key>"
-  VITE_SUPABASE_URL='http://127.0.0.1:54321'
+  VITE_API_BASE_URL="http://127.0.0.1:8000"
   ```
 
-### 2. Supabase Functions Environment:
+### 2. FastAPI Backend Environment:
 
-- Copy `supabase/functions/.env.template` to `supabase/functions/.env`
-- Update all required keys in `supabase/functions/.env`, including:
+- Copy `backend/.env.template` to `backend/.env`
+- Update provider keys as needed:
+
   ```
-  ANTHROPIC_API_KEY="<Test Anthropic API Key>"
-  ENVIRONMENT="local"
-  NGROK_URL="<NGROK URL>" # Your ngrok tunnel URL, e.g., https://xxxx-xx-xx-xxx-xx.ngrok.io
+  CADAM_SECRET_KEY="<local signing secret>"
+  OPENROUTER_API_KEY="<OpenRouter API Key>"
+  ANTHROPIC_API_KEY="<Anthropic API Key>"
+  FAL_KEY="<Fal API Key>"
   ```
 
-## 🌐 Setting Up ngrok for Local Development
-
-CADAM uses ngrok to send image URLs to Anthropic:
-
-1. Install ngrok if you haven't already:
-
-   ```bash
-   npm install -g ngrok
-   # or
-   brew install ngrok
-   ```
-
-2. Start an ngrok tunnel pointing to your Supabase instance:
-
-   ```bash
-   ngrok http 54321
-   ```
-
-3. Copy the generated ngrok URL (e.g., https://xxxx-xx-xx-xxx-xx.ngrok.io) and add it to your `supabase/functions/.env` file:
-
-   ```
-   NGROK_URL="https://xxxx-xx-xx-xxx-xx.ngrok.io"
-   ```
-
-4. Ensure `ENVIRONMENT="local"` is set in the same file.
+  The local backend exposes an unlimited billing compatibility response, so no
+  external billing service keys are required.
 
 ## 💻 Development Workflow
 
@@ -151,11 +127,10 @@ CADAM uses ngrok to send image URLs to Anthropic:
 npm i
 ```
 
-### Start Supabase Services
+### Start Local Services
 
 ```bash
-npx supabase start
-npx supabase functions serve --no-verify-jwt
+npm run dev:local
 ```
 
 ## 🛠️ Built With
@@ -163,7 +138,7 @@ npx supabase functions serve --no-verify-jwt
 - **Frontend:** React 18 + TypeScript + Vite
 - **3D Rendering:** Three.js + React Three Fiber
 - **CAD Engine:** OpenSCAD WebAssembly
-- **Backend:** Supabase (PostgreSQL + Edge Functions)
+- **Backend:** FastAPI + SQLite for the local-first runtime
 - **AI:** Anthropic Claude API
 - **Styling:** Tailwind CSS + shadcn/ui
 - **Libraries:** BOSL, BOSL2, MCAD

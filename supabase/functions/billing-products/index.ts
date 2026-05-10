@@ -6,7 +6,7 @@ import { initSentry, logError } from '../_shared/sentry.ts';
 initSentry();
 
 // Products are public (pricing page is shown to unauthenticated users too).
-// No session check here — the billing service enforces API-key auth.
+// Self-hosted billing returns an empty catalog.
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });

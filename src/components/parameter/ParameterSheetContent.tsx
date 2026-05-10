@@ -12,7 +12,11 @@ import {
 import { ParameterInput } from '@/components/parameter/ParameterInput';
 import { validateParameterValue } from '@/utils/parameterUtils';
 import { useCurrentMessage } from '@/contexts/CurrentMessageContext';
-import { downloadSTLFile, downloadOpenSCADFile } from '@/utils/downloadUtils';
+import {
+  downloadGLBFile,
+  downloadOpenSCADFile,
+  downloadSTLFile,
+} from '@/utils/downloadUtils';
 
 interface ParameterSheetContentProps {
   parameters: Parameter[];
@@ -26,7 +30,10 @@ export function ParameterSheetContent({
   currentOutput,
 }: ParameterSheetContentProps) {
   const { currentMessage } = useCurrentMessage();
-  const [selectedFormat, setSelectedFormat] = useState<'stl' | 'scad'>('stl');
+  const [selectedFormat, setSelectedFormat] = useState<'stl' | 'glb' | 'scad'>(
+    'stl',
+  );
+  const [isExportingGlb, setIsExportingGlb] = useState(false);
 
   // Debounce timer for compilation
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -77,9 +84,11 @@ export function ParameterSheetContent({
     debouncedSubmit(updatedParameters);
   };
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
     if (selectedFormat === 'stl') {
       handleDownloadSTL();
+    } else if (selectedFormat === 'glb') {
+      await handleDownloadGLB();
     } else {
       handleDownloadOpenSCAD();
     }
@@ -90,15 +99,28 @@ export function ParameterSheetContent({
     downloadSTLFile(currentOutput, currentMessage);
   };
 
+  const handleDownloadGLB = async () => {
+    if (!currentOutput) return;
+    setIsExportingGlb(true);
+    try {
+      await downloadGLBFile(currentOutput, currentMessage);
+    } catch (error) {
+      console.error('[Download] Failed to export GLB:', error);
+    } finally {
+      setIsExportingGlb(false);
+    }
+  };
+
   const handleDownloadOpenSCAD = () => {
     if (!currentMessage?.content.artifact?.code) return;
     downloadOpenSCADFile(currentMessage.content.artifact.code, currentMessage);
   };
 
   const isDownloadDisabled =
-    selectedFormat === 'stl'
+    isExportingGlb ||
+    (selectedFormat === 'stl' || selectedFormat === 'glb'
       ? !currentOutput
-      : !currentMessage?.content.artifact?.code;
+      : !currentMessage?.content.artifact?.code);
 
   return (
     <>
@@ -122,7 +144,7 @@ export function ParameterSheetContent({
             className="flex-1 rounded-r-none bg-adam-neutral-50 text-adam-neutral-800 hover:bg-adam-neutral-100 hover:text-adam-neutral-900"
           >
             <Download className="mr-2 h-4 w-4" />
-            {selectedFormat.toUpperCase()}
+            {isExportingGlb ? 'EXPORTING...' : selectedFormat.toUpperCase()}
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -145,6 +167,16 @@ export function ParameterSheetContent({
                 <span className="text-sm">.STL</span>
                 <span className="col-span-2 text-xs text-adam-text-primary/60">
                   3D Printing
+                </span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => setSelectedFormat('glb')}
+                disabled={!currentOutput}
+                className="grid cursor-pointer grid-cols-3 text-adam-text-primary"
+              >
+                <span className="text-sm">.GLB</span>
+                <span className="col-span-2 text-xs text-adam-text-primary/60">
+                  3D Apps
                 </span>
               </DropdownMenuItem>
               <DropdownMenuItem

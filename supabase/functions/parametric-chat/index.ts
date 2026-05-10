@@ -441,7 +441,7 @@ Deno.serve(async (req) => {
     });
   }
 
-  // Deduct chat token (1) via adam-billing
+  // Consume a chat token through the self-hosted billing adapter.
   if (!userData.user.email) {
     return new Response(JSON.stringify({ error: 'User email missing' }), {
       status: 400,

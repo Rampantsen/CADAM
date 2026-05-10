@@ -1,6 +1,6 @@
-// HTTP client for the shared adam-billing service. Mirrors
-// onshape-extension/src/lib/billing/client.ts so CADAM and onshape behave
-// identically against the same endpoints.
+// Self-hosted billing adapter. CADAM still keeps Supabase Auth and user-scoped
+// data access, but deployment no longer depends on the external adam-billing
+// service. All authenticated users receive effectively unlimited credits.
 
 export type SubscriptionLevel = 'standard' | 'pro';
 
@@ -73,56 +73,35 @@ export class BillingClientError extends Error {
   }
 }
 
-const baseUrl = (): string => {
-  const url = Deno.env.get('BILLING_SERVICE_URL');
-  if (!url) throw new Error('BILLING_SERVICE_URL is not set');
-  return url.replace(/\/$/, '');
-};
+const UNLIMITED_TOKENS = 999_999_999;
 
-const apiKey = (): string => {
-  const key = Deno.env.get('BILLING_SERVICE_KEY');
-  if (!key) throw new Error('BILLING_SERVICE_KEY is not set');
-  return key;
-};
+const selfHostedStatus = (): BillingStatus => ({
+  user: {
+    hasTrialed: true,
+  },
+  subscription: {
+    level: 'pro',
+    status: 'active',
+    currentPeriodEnd: null,
+  },
+  tokens: {
+    free: UNLIMITED_TOKENS,
+    subscription: 0,
+    purchased: 0,
+    total: UNLIMITED_TOKENS,
+  },
+});
 
-type CallOptions = {
-  allowStatus?: number[];
-};
+const selfHostedSuccess = (tokens = 0): ConsumeSuccess => ({
+  ok: true,
+  tokensDeducted: tokens,
+  freeBalance: UNLIMITED_TOKENS,
+  subscriptionBalance: 0,
+  purchasedBalance: 0,
+  totalBalance: UNLIMITED_TOKENS,
+});
 
-const call = async <T>(
-  method: 'GET' | 'POST',
-  path: string,
-  body?: unknown,
-  options?: CallOptions,
-): Promise<T> => {
-  const res = await fetch(`${baseUrl()}${path}`, {
-    method,
-    headers: {
-      Authorization: `Bearer ${apiKey()}`,
-      'Content-Type': 'application/json',
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  const text = await res.text();
-  let parsed: unknown;
-  if (text) {
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      parsed = text;
-    }
-  }
-  if (!res.ok && !options?.allowStatus?.includes(res.status)) {
-    throw new BillingClientError(
-      `billing ${method} ${path} -> ${res.status}`,
-      res.status,
-      parsed,
-    );
-  }
-  return parsed as T;
-};
-
-const enc = (email: string): string => encodeURIComponent(email.toLowerCase());
+const appUrl = (): string => Deno.env.get('ADAM_URL') ?? '/';
 
 type ConsumeBody = {
   tokens: number;
@@ -161,36 +140,41 @@ export type CancelSubscriptionResult =
   | { canceled: false; reason: 'no_subscription' | 'already_canceled' };
 
 export const billing = {
-  getStatus: (email: string) =>
-    call<BillingStatus>('GET', `/v1/users/${enc(email)}/status`),
+  getStatus: (_email: string): Promise<BillingStatus> =>
+    Promise.resolve(selfHostedStatus()),
 
-  consume: (email: string, body: ConsumeBody) =>
-    call<ConsumeResult>('POST', `/v1/users/${enc(email)}/consume`, body, {
-      allowStatus: [422],
+  consume: (_email: string, body: ConsumeBody): Promise<ConsumeResult> =>
+    Promise.resolve(selfHostedSuccess(body.tokens)),
+
+  refund: (_email: string, body: RefundBody): Promise<RefundResult> =>
+    Promise.resolve({
+      ...selfHostedSuccess(0),
+      tokensRefunded: body.tokens,
+      source: 'purchased',
     }),
 
-  refund: (email: string, body: RefundBody) =>
-    call<RefundResult>('POST', `/v1/users/${enc(email)}/refund`, body),
+  createCheckout: (
+    _email: string,
+    _body: CheckoutBody,
+  ): Promise<{ url: string }> => Promise.resolve({ url: appUrl() }),
 
-  createCheckout: (email: string, body: CheckoutBody) =>
-    call<{ url: string }>('POST', `/v1/users/${enc(email)}/checkout`, body),
+  createPortal: (
+    _email: string,
+    body: { returnUrl: string },
+  ): Promise<{ url: string }> => Promise.resolve({ url: body.returnUrl }),
 
-  createPortal: (email: string, body: { returnUrl: string }) =>
-    call<{ url: string }>('POST', `/v1/users/${enc(email)}/portal`, body),
+  cancelSubscription: (
+    _email: string,
+    _body: CancelSubscriptionBody = {},
+  ): Promise<CancelSubscriptionResult> =>
+    Promise.resolve({ canceled: false, reason: 'no_subscription' }),
 
-  cancelSubscription: (email: string, body: CancelSubscriptionBody = {}) =>
-    call<CancelSubscriptionResult>(
-      'POST',
-      `/v1/users/${enc(email)}/cancel-subscription`,
-      body,
-    ),
+  getProductsByType: (
+    _type: 'subscription' | 'pack',
+  ): Promise<BillingProduct[]> => Promise.resolve([]),
 
-  getProductsByType: (type: 'subscription' | 'pack') =>
-    call<BillingProduct[]>('GET', `/v1/products?type=${type}`),
-
-  getAllProducts: () =>
-    call<{ subscriptions: BillingProduct[]; packs: BillingProduct[] }>(
-      'GET',
-      '/v1/products',
-    ),
+  getAllProducts: (): Promise<{
+    subscriptions: BillingProduct[];
+    packs: BillingProduct[];
+  }> => Promise.resolve({ subscriptions: [], packs: [] }),
 };

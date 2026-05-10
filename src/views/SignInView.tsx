@@ -17,6 +17,7 @@ import { supabase } from '@/lib/supabase';
 import { useMutation } from '@tanstack/react-query';
 import { GoogleIcon } from '@/components/icons/CompanyIcons';
 import { validateRedirectUrl } from '@/lib/utils';
+import { isLocalApiEnabled } from '@/lib/localApi';
 
 export function SignInView() {
   const [email, setEmail] = useState('');
@@ -41,6 +42,10 @@ export function SignInView() {
   const searchParams = new URLSearchParams(location.search);
   const rawRedirectPath = searchParams.get('redirect');
   const redirectPath = validateRedirectUrl(rawRedirectPath);
+  const accountLabel = isLocalApiEnabled ? 'Username' : 'Email';
+  const accountPlaceholder = isLocalApiEnabled
+    ? 'Enter your username'
+    : 'Enter your email';
 
   // Redirect to home if already authenticated
   useEffect(() => {
@@ -88,7 +93,7 @@ export function SignInView() {
       const error = err as AuthError;
       const message =
         error.message === 'Invalid login credentials'
-          ? 'Invalid email or password'
+          ? `Invalid ${accountLabel.toLowerCase()} or password`
           : 'An error occurred while signing in';
       setError(message);
       toast({
@@ -272,16 +277,18 @@ export function SignInView() {
               />
             </div>
           </div>
-          <div className="w-full">
-            <Button
-              onClick={() => signInWithGoogle()}
-              className="flex w-full items-center gap-2 hover:bg-adam-blue/10"
-              disabled={isSigningInWithGoogle}
-            >
-              <GoogleIcon className="w-4" />
-              <span>Continue with Google</span>
-            </Button>
-          </div>
+          {!isLocalApiEnabled && (
+            <div className="w-full">
+              <Button
+                onClick={() => signInWithGoogle()}
+                className="flex w-full items-center gap-2 hover:bg-adam-blue/10"
+                disabled={isSigningInWithGoogle}
+              >
+                <GoogleIcon className="w-4" />
+                <span>Continue with Google</span>
+              </Button>
+            </div>
+          )}
 
           <form
             onSubmit={mode === 'password' ? handleSignIn : handleMagicLink}
@@ -295,12 +302,13 @@ export function SignInView() {
 
             <div className="space-y-2">
               <Label htmlFor="email" className="text-white">
-                Email
+                {accountLabel}
               </Label>
               <Input
                 id="email"
-                type="email"
-                placeholder="Enter your email"
+                type={isLocalApiEnabled ? 'text' : 'email'}
+                autoComplete="username"
+                placeholder={accountPlaceholder}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
@@ -314,12 +322,14 @@ export function SignInView() {
                   <Label htmlFor="password" className="text-white">
                     Password
                   </Label>
-                  <Link
-                    to="/reset-password"
-                    className="text-sm text-adam-blue hover:text-adam-blue/80"
-                  >
-                    Forgot password?
-                  </Link>
+                  {!isLocalApiEnabled && (
+                    <Link
+                      to="/reset-password"
+                      className="text-sm text-adam-blue hover:text-adam-blue/80"
+                    >
+                      Forgot password?
+                    </Link>
+                  )}
                 </div>
                 <Input
                   id="password"
@@ -333,20 +343,22 @@ export function SignInView() {
               </div>
             )}
 
-            <div className="text-center">
-              <button
-                type="button"
-                className="text-sm text-adam-blue hover:text-adam-blue/80"
-                onClick={() => {
-                  setMode(mode === 'password' ? 'magiclink' : 'password');
-                  setError(null);
-                }}
-              >
-                {mode === 'password'
-                  ? 'Sign in with magic link instead'
-                  : 'Sign in with password instead'}
-              </button>
-            </div>
+            {!isLocalApiEnabled && (
+              <div className="text-center">
+                <button
+                  type="button"
+                  className="text-sm text-adam-blue hover:text-adam-blue/80"
+                  onClick={() => {
+                    setMode(mode === 'password' ? 'magiclink' : 'password');
+                    setError(null);
+                  }}
+                >
+                  {mode === 'password'
+                    ? 'Sign in with magic link instead'
+                    : 'Sign in with password instead'}
+                </button>
+              </div>
+            )}
 
             <Button type="submit" className="w-full p-6" disabled={isLoading}>
               {isLoading ? (

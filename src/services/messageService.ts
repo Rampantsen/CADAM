@@ -1,4 +1,10 @@
 import { useConversation } from '@/contexts/ConversationContext';
+import {
+  isLocalApiEnabled,
+  localApiRequestJson,
+  streamLocalJsonLines,
+} from '@/lib/localApi';
+import { createId } from '@/lib/ids';
 import { supabase } from '@/lib/supabase';
 import { Content, Conversation, Message, Model } from '@shared/types';
 import { HistoryConversation } from '../types/misc.ts';
@@ -80,6 +86,68 @@ function messageInsertedConversationUpdate(
   );
 }
 
+function upsertStreamingMessage(
+  queryClient: QueryClient,
+  conversationId: string,
+  data: Message,
+) {
+  queryClient.setQueryData(
+    ['messages', conversationId],
+    (oldMessages: Message[] | undefined) => {
+      if (!oldMessages || oldMessages.length === 0) return [data];
+      if (oldMessages.find((msg) => msg.id === data.id)) {
+        return oldMessages.map((msg) => (msg.id === data.id ? data : msg));
+      }
+      return [...oldMessages, data];
+    },
+  );
+}
+
+async function streamLocalChat(
+  queryClient: QueryClient,
+  endpoint: string,
+  {
+    model,
+    messageId,
+    conversationId,
+  }: {
+    model: Model;
+    messageId: string;
+    conversationId: string;
+  },
+) {
+  const newMessageId = createId();
+  let initialized = false;
+
+  return streamLocalJsonLines<Message>(
+    endpoint,
+    {
+      conversationId,
+      messageId,
+      model,
+      newMessageId,
+    },
+    {
+      onItem: async (data) => {
+        upsertStreamingMessage(queryClient, conversationId, data);
+        if (!initialized) {
+          await queryClient.cancelQueries({
+            queryKey: ['conversation', conversationId],
+          });
+          queryClient.setQueryData(
+            ['conversation', conversationId],
+            (oldConversation: Conversation) => ({
+              ...oldConversation,
+              current_message_leaf_id: data.id,
+            }),
+          );
+          initialized = true;
+        }
+      },
+    },
+  );
+}
+
 export const useMessagesQuery = () => {
   const { conversation } = useConversation();
   return useQuery<Message[]>({
@@ -87,6 +155,12 @@ export const useMessagesQuery = () => {
     queryKey: ['messages', conversation.id],
     initialData: [],
     queryFn: async () => {
+      if (isLocalApiEnabled) {
+        return localApiRequestJson<Message[]>(
+          `/api/v1/conversations/${conversation.id}/messages`,
+        );
+      }
+
       const { data: messagesData, error: messagesError } = await supabase
         .from('messages')
         .select('*')
@@ -110,6 +184,16 @@ export function useInsertMessageMutation() {
     mutationFn: async (
       message: Omit<Message, 'id' | 'created_at' | 'rating'>,
     ) => {
+      if (isLocalApiEnabled) {
+        return localApiRequestJson<Message, typeof message>(
+          `/api/v1/conversations/${message.conversation_id}/messages`,
+          {
+            method: 'POST',
+            body: message,
+          },
+        );
+      }
+
       const { data, error } = await supabase
         .from('messages')
         .insert([{ ...message }])
@@ -158,8 +242,12 @@ export function useCreativeChatMutation({
       messageId: string;
       conversationId: string;
     }) => {
-      const newMessageId = crypto.randomUUID();
+      const newMessageId = createId();
       let initialized = false;
+
+      if (isLocalApiEnabled) {
+        throw new Error('Creative chat is not implemented in local mode yet.');
+      }
 
       // Start streaming request
       const response = await fetch(
@@ -364,7 +452,15 @@ export function useParametricChatMutation({
       messageId: string;
       conversationId: string;
     }) => {
-      const newMessageId = crypto.randomUUID();
+      if (isLocalApiEnabled) {
+        return streamLocalChat(queryClient, '/api/v1/chat/parametric', {
+          model,
+          messageId,
+          conversationId,
+        });
+      }
+
+      const newMessageId = createId();
       let initialized = false;
 
       // Start streaming request
@@ -573,7 +669,7 @@ export function useSendContentMutation({
       // Handle image uploads and create message
       const databaseOperations = [];
 
-      if (content.images && content.images.length > 0) {
+      if (!isLocalApiEnabled && content.images && content.images.length > 0) {
         // Create database entries for images and move them to conversation folder
         const imageOperations = content.images.map(async (imageId) => {
           // Create the image record in the database
@@ -598,7 +694,7 @@ export function useSendContentMutation({
         databaseOperations.push(...imageOperations);
       }
 
-      if (content.mesh) {
+      if (!isLocalApiEnabled && content.mesh) {
         const meshOperation = supabase
           .from('meshes')
           .upsert(
@@ -655,6 +751,19 @@ export function useUpdateMessageOptimisticMutation() {
 
   return useMutation({
     mutationFn: async ({ message }: { message: Message }) => {
+      if (isLocalApiEnabled) {
+        return localApiRequestJson<Message, Pick<Message, 'content' | 'rating'>>(
+          `/api/v1/conversations/${message.conversation_id}/messages/${message.id}`,
+          {
+            method: 'PATCH',
+            body: {
+              content: message.content,
+              rating: message.rating,
+            },
+          },
+        );
+      }
+
       const { data: updatedMessage, error: messageError } = await supabase
         .from('messages')
         .update({
@@ -893,6 +1002,10 @@ export function useUpscaleMutation({
       meshId: string;
       parentMessageId: string | null;
     }) => {
+      if (isLocalApiEnabled) {
+        throw new Error('Upscale is not implemented in local mode yet.');
+      }
+
       // Immediately navigate to parent message to show loading state
       if (parentMessageId && updateConversationAsync) {
         await updateConversationAsync({

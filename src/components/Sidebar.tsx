@@ -16,7 +16,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/lib/supabase';
 import {
   Sheet,
   SheetContent,
@@ -30,9 +29,10 @@ import { useQuery } from '@tanstack/react-query';
 import { ConditionalWrapper } from './ConditionalWrapper';
 import { DiscordIcon, GitHubIcon } from './icons/CompanyIcons';
 import { cn } from '@/lib/utils';
-import { Conversation, ConversationSettings } from '@shared/types';
+import { Conversation } from '@shared/types';
 import { UserAvatar } from '@/components/chat/UserAvatar';
 import { useProfile } from '@/services/profileService';
+import { listRecentConversations } from '@/services/conversationService';
 
 interface SidebarProps {
   isSidebarOpen: boolean;
@@ -49,18 +49,10 @@ function DesktopSidebar({ isSidebarOpen, setIsSidebarOpen }: SidebarProps) {
   const { data: recentConversations } = useQuery<Conversation[]>({
     queryKey: ['conversations', 'recent'],
     initialData: [],
+    enabled: !!user?.id,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('conversations')
-        .select('*')
-        .order('updated_at', { ascending: false })
-        .eq('user_id', user?.id ?? '')
-        .limit(10)
-        .overrideTypes<Array<{ settings: ConversationSettings }>>();
-
-      if (error) throw error;
-
-      return data;
+      if (!user?.id) return [];
+      return listRecentConversations(user.id);
     },
   });
 

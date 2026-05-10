@@ -39,8 +39,19 @@ export default defineConfig({
     host: true,
   },
   server: {
-    port: 3000,
+    port: 6000,
+    host: '0.0.0.0',
     open: false,
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+      },
+      '/functions': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+      },
+    },
   },
   optimizeDeps: {
     exclude: ['@zip.js/zip.js', 'three', 'three-stdlib', '@sentry/vite-plugin'],

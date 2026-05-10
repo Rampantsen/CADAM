@@ -407,7 +407,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Deduct tokens for mesh operation via adam-billing
+    // Consume mesh tokens through the self-hosted billing adapter.
     if (!userData.user.email) {
       return new Response(
         JSON.stringify({ error: { message: 'User email missing' } }),

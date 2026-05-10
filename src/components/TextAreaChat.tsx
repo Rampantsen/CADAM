@@ -51,6 +51,12 @@ import { Slider } from '@/components/ui/slider';
 import { Input } from '@/components/ui/input';
 import { useMutation } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
+import {
+  isLocalApiEnabled,
+  uploadLocalConversationImage,
+  uploadLocalConversationMesh,
+} from '@/lib/localApi';
+import { createId } from '@/lib/ids';
 import { useAuth } from '@/contexts/AuthContext';
 import { ModelSelector } from '@/components/ModelSelector';
 import { Button } from '@/components/ui/button';
@@ -79,6 +85,7 @@ interface TextAreaChatProps {
   showPromptGenerator?: boolean;
   showFullLabels?: boolean; // Controls whether to show full text labels on buttons
   onTypeChange?: (type: 'parametric' | 'creative') => void;
+  onBeforeUpload?: () => Promise<void>;
   conversation: {
     id: string;
     user_id: string;
@@ -464,6 +471,17 @@ const isSupportedMeshFile = (
   return lowerFilename.endsWith('.stl');
 };
 
+type UploadedImageResult = {
+  id: string;
+  url: string;
+};
+
+type UploadedMeshResult = {
+  id: string;
+  url?: string;
+  fileType: MeshFileType;
+};
+
 function TextAreaChat({
   onSubmit,
   onFocus,
@@ -477,6 +495,7 @@ function TextAreaChat({
   showPromptGenerator = false,
   showFullLabels = false,
   onTypeChange,
+  onBeforeUpload,
   conversation,
 }: TextAreaChatProps) {
   const [isFocused, setIsFocused] = useState(false);
@@ -733,8 +752,9 @@ function TextAreaChat({
     // Debug the early return conditions
     const hasNoContent = images.length === 0 && !input?.trim() && !mesh;
     const hasUploadingImages = images.some((img) => img.isUploading);
+    const hasUploadingMesh = !!mesh?.isUploading;
 
-    if (hasNoContent || isLoading || hasUploadingImages) {
+    if (hasNoContent || isLoading || hasUploadingImages || hasUploadingMesh) {
       return;
     }
     let content: Content = {
@@ -774,7 +794,27 @@ function TextAreaChat({
   };
 
   const { mutateAsync: uploadImageAsync } = useMutation({
-    mutationFn: async ({ file, id }: { file: File; id: string }) => {
+    mutationFn: async ({
+      file,
+      id,
+    }: {
+      file: File;
+      id: string;
+    }): Promise<UploadedImageResult> => {
+      if (isLocalApiEnabled) {
+        await onBeforeUpload?.();
+        const image = await uploadLocalConversationImage(conversation.id, file);
+        const reader = new FileReader();
+        const urlPromise = new Promise<string>((resolve) => {
+          reader.onload = () => {
+            resolve(reader.result as string);
+          };
+        });
+        reader.readAsDataURL(file);
+        const url = await urlPromise;
+        return { id: image.id, url };
+      }
+
       const { error } = await supabase.storage
         .from('images')
         .upload(`${conversation.user_id}/${conversation.id}/${id}`, file);
@@ -790,7 +830,7 @@ function TextAreaChat({
       reader.readAsDataURL(file);
       const url = (await urlPromise) as string;
 
-      return url;
+      return { id, url };
     },
     onError: () => {
       toast({
@@ -802,9 +842,25 @@ function TextAreaChat({
   });
 
   const { mutateAsync: uploadMeshAsync } = useMutation({
-    mutationFn: async ({ file, id }: { file: File; id: string }) => {
+    mutationFn: async ({
+      file,
+      id,
+    }: {
+      file: File;
+      id: string;
+    }): Promise<UploadedMeshResult> => {
       // Determine file extension
       const fileExtension = getMeshFileType(file.name);
+
+      if (isLocalApiEnabled) {
+        await onBeforeUpload?.();
+        const mesh = await uploadLocalConversationMesh(conversation.id, file);
+        return {
+          id: mesh.id,
+          url: await generatePreview(file, mesh.file_type as MeshFileType),
+          fileType: mesh.file_type as MeshFileType,
+        };
+      }
 
       const { error } = await supabase.storage
         .from('meshes')
@@ -823,7 +879,7 @@ function TextAreaChat({
         .createSignedUrl(previewPath, 60 * 60); // 1 hour expiry
 
       if (data && data.signedUrl) {
-        return data.signedUrl;
+        return { id, url: data.signedUrl, fileType: fileExtension };
       }
 
       // If preview doesn't exist, generate it with the correct file type
@@ -845,18 +901,18 @@ function TextAreaChat({
 
         if (uploadError) {
           console.error('Error uploading preview:', uploadError);
-          return preview; // Return the preview anyway even if upload fails
+          return { id, url: preview, fileType: fileExtension };
         }
 
         // Get the signed URL of the uploaded preview
         const { data } = await supabase.storage
           .from('images')
           .createSignedUrl(previewPath, 60 * 60); // 1 hour expiry
-        return data?.signedUrl;
+        return { id, url: data?.signedUrl, fileType: fileExtension };
       }
 
       // If not the owner, just return the generated preview
-      return preview;
+      return { id, url: preview, fileType: fileExtension };
     },
     onError: () => {
       toast({
@@ -964,7 +1020,7 @@ function TextAreaChat({
     }
 
     filteredMeshes.forEach(async (file) => {
-      const tempId = crypto.randomUUID();
+      const tempId = createId();
       const fileType = getMeshFileType(file.name);
       setMesh({ id: tempId, isUploading: true, source: 'upload', fileType });
       try {
@@ -980,7 +1036,7 @@ function TextAreaChat({
           // Generate multi-angle renders and upload as images
           const renders = await renderMultipleAngles(geometry, boundingBox);
           for (const renderBlob of renders) {
-            const renderId = crypto.randomUUID();
+            const renderId = createId();
             const renderFile = new File(
               [renderBlob],
               `render-${renderId}.png`,
@@ -994,7 +1050,7 @@ function TextAreaChat({
               { id: renderId, isUploading: true, source: 'upload', url },
             ]);
             try {
-              const signedUrl = await uploadImageAsync({
+              const uploadedImage = await uploadImageAsync({
                 file: renderFile,
                 id: renderId,
               });
@@ -1002,7 +1058,12 @@ function TextAreaChat({
               setImages((prevImages) =>
                 prevImages.map((img) =>
                   img.id === renderId
-                    ? { ...img, isUploading: false, url: signedUrl }
+                    ? {
+                        ...img,
+                        id: uploadedImage.id,
+                        isUploading: false,
+                        url: uploadedImage.url,
+                      }
                     : img,
                 ),
               );
@@ -1017,13 +1078,13 @@ function TextAreaChat({
           geometry.dispose();
         }
 
-        const url = await uploadMeshAsync({ file: file, id: tempId });
+        const uploadedMesh = await uploadMeshAsync({ file: file, id: tempId });
         setMesh({
-          id: tempId,
+          id: uploadedMesh.id,
           isUploading: false,
-          url,
+          url: uploadedMesh.url,
           source: 'upload',
-          fileType,
+          fileType: uploadedMesh.fileType || fileType,
         });
       } catch (error) {
         console.error('Error uploading mesh:', error);
@@ -1035,19 +1096,24 @@ function TextAreaChat({
 
     // Upload each valid image immediately
     filteredImages.forEach(async (file) => {
-      const tempId = crypto.randomUUID();
+      const tempId = createId();
       const url = URL.createObjectURL(file);
       setImages((prevImages) => [
         ...prevImages,
         { id: tempId, isUploading: true, source: 'upload', url },
       ]);
       try {
-        const signedUrl = await uploadImageAsync({ file, id: tempId });
+        const uploadedImage = await uploadImageAsync({ file, id: tempId });
         URL.revokeObjectURL(url);
         setImages((prevImages) =>
           prevImages.map((img) =>
             img.id === tempId
-              ? { ...img, isUploading: false, url: signedUrl }
+              ? {
+                  ...img,
+                  id: uploadedImage.id,
+                  isUploading: false,
+                  url: uploadedImage.url,
+                }
               : img,
           ),
         );
@@ -1106,7 +1172,7 @@ function TextAreaChat({
   };
 
   const handleMeshRemoved = async () => {
-    if (mesh?.source === 'upload') {
+    if (mesh?.source === 'upload' && !isLocalApiEnabled) {
       try {
         const fileExtension = mesh.fileType || 'glb'; // Default to glb if fileType is not set
         await Promise.all([
@@ -1131,7 +1197,7 @@ function TextAreaChat({
   const handleImageRemoved = async (image: MessageItem) => {
     if (!image.isUploading) {
       // Only try to remove from storage if the item has been uploaded
-      if (image.source === 'upload') {
+      if (image.source === 'upload' && !isLocalApiEnabled) {
         try {
           await supabase.storage
             .from('images')
@@ -1695,12 +1761,15 @@ function TextAreaChat({
                 }}
                 className={cn(
                   'flex h-8 w-8 transform items-center justify-center rounded-lg bg-adam-neutral-700 p-1 text-white transition-all duration-300 hover:scale-105 hover:bg-adam-blue/90 disabled:opacity-50 disabled:hover:scale-100 disabled:hover:bg-adam-blue',
-                  images.some((img) => img.isUploading) && 'opacity-50',
+                  (images.some((img) => img.isUploading) ||
+                    mesh?.isUploading) &&
+                    'opacity-50',
                 )}
                 disabled={
-                  (images.length === 0 && !input?.trim()) ||
+                  (images.length === 0 && !input?.trim() && !mesh) ||
                   isLoading ||
                   images.some((img) => img.isUploading) ||
+                  !!mesh?.isUploading ||
                   disabled
                 }
               >

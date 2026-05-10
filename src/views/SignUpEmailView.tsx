@@ -10,6 +10,7 @@ import { supabase } from '@/lib/supabase';
 import { useMutation } from '@tanstack/react-query';
 import { GoogleIcon } from '@/components/icons/CompanyIcons';
 import { validateRedirectUrl } from '@/lib/utils';
+import { isLocalApiEnabled } from '@/lib/localApi';
 
 export function SignUpEmailView() {
   const [name, setName] = useState('');
@@ -26,6 +27,10 @@ export function SignUpEmailView() {
   const searchParams = new URLSearchParams(location.search);
   const rawRedirectPath = searchParams.get('redirect');
   const redirectPath = validateRedirectUrl(rawRedirectPath);
+  const accountLabel = isLocalApiEnabled ? 'Username' : 'Email';
+  const accountPlaceholder = isLocalApiEnabled
+    ? 'Choose a username'
+    : 'Enter your email';
 
   // Redirect to home if already authenticated
   useEffect(() => {
@@ -83,14 +88,22 @@ export function SignUpEmailView() {
 
     setIsLoading(true);
     try {
-      await signUp(email, password, name);
+      await signUp(email.trim(), password, name);
 
-      toast({
-        title: 'Verify your email',
-        description:
-          'Please check your email to verify your account before signing in.',
-      });
-      navigate('/confirm-email', { state: { email } });
+      if (isLocalApiEnabled) {
+        toast({
+          title: 'Account created',
+          description: 'You are signed in to the local CADAM backend.',
+        });
+        navigate(redirectPath);
+      } else {
+        toast({
+          title: 'Verify your email',
+          description:
+            'Please check your email to verify your account before signing in.',
+        });
+        navigate('/confirm-email', { state: { email } });
+      }
     } catch (error) {
       console.error(error);
       toast({
@@ -118,16 +131,18 @@ export function SignUpEmailView() {
               Create Account
             </h1>
           </div>
-          <div className="w-full py-2">
-            <Button
-              onClick={() => signInWithGoogle()}
-              className="flex w-full items-center gap-2 hover:bg-adam-blue/10"
-              disabled={isSigningInWithGoogle}
-            >
-              <GoogleIcon className="w-4" />
-              <span>Continue with Google</span>
-            </Button>
-          </div>
+          {!isLocalApiEnabled && (
+            <div className="w-full py-2">
+              <Button
+                onClick={() => signInWithGoogle()}
+                className="flex w-full items-center gap-2 hover:bg-adam-blue/10"
+                disabled={isSigningInWithGoogle}
+              >
+                <GoogleIcon className="w-4" />
+                <span>Continue with Google</span>
+              </Button>
+            </div>
+          )}
 
           <form onSubmit={handleSignUp} className="space-y-6">
             <div className="space-y-2">
@@ -147,12 +162,13 @@ export function SignUpEmailView() {
 
             <div className="space-y-2">
               <Label htmlFor="email" className="text-white">
-                Email
+                {accountLabel}
               </Label>
               <Input
                 id="email"
-                type="email"
-                placeholder="Enter your email"
+                type={isLocalApiEnabled ? 'text' : 'email'}
+                autoComplete="username"
+                placeholder={accountPlaceholder}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required

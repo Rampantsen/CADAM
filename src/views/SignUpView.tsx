@@ -7,6 +7,7 @@ import { useMutation } from '@tanstack/react-query';
 import { GoogleIcon } from '@/components/icons/CompanyIcons';
 import { useEffect } from 'react';
 import { validateRedirectUrl } from '@/lib/utils';
+import { isLocalApiEnabled } from '@/lib/localApi';
 
 export function SignUpView() {
   const { toast } = useToast();
@@ -64,22 +65,24 @@ export function SignUpView() {
             />
             <h1 className="text-xl font-semibold text-white">Create Account</h1>
           </div>
-          <div className="w-full py-2">
-            <Button
-              onClick={() => signInWithGoogle()}
-              className="flex w-full items-center gap-2 p-6 md:hover:bg-adam-blue/10"
-              disabled={isSigningInWithGoogle}
-            >
-              <GoogleIcon className="w-4" />
-              <span>Continue with Google</span>
-            </Button>
-          </div>
+          {!isLocalApiEnabled && (
+            <div className="w-full py-2">
+              <Button
+                onClick={() => signInWithGoogle()}
+                className="flex w-full items-center gap-2 p-6 md:hover:bg-adam-blue/10"
+                disabled={isSigningInWithGoogle}
+              >
+                <GoogleIcon className="w-4" />
+                <span>Continue with Google</span>
+              </Button>
+            </div>
+          )}
           <div className="pt-4 text-center text-sm text-adam-text-secondary">
             <Link
               to="/signup-email"
               className="text-adam-text-primary hover:underline"
             >
-              Sign up with email
+              {isLocalApiEnabled ? 'Sign up with username' : 'Sign up with email'}
             </Link>
             {' or '}
             <Link to="/signin" className="text-adam-blue hover:underline">

@@ -1,6 +1,12 @@
 import { useAuth } from '@/contexts/AuthContext';
-import { Conversation, Content } from '@shared/types';
+import { Conversation, Content, Message } from '@shared/types';
+import {
+  generateLocalConversationTitle,
+  isLocalApiEnabled,
+  localApiRequestJson,
+} from '@/lib/localApi';
 import { supabase } from '@/lib/supabase';
+import { HistoryConversation } from '@/types/misc';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'react-router-dom';
 
@@ -15,6 +21,184 @@ const defaultConversation: Conversation = {
   type: 'parametric',
   settings: null,
 };
+
+type ConversationUpdatePayload = Partial<
+  Pick<
+    Conversation,
+    | 'title'
+    | 'type'
+    | 'privacy'
+    | 'settings'
+    | 'current_message_leaf_id'
+  >
+>;
+
+function toHistoryConversation(
+  conversation: Conversation,
+  firstMessage: Content = { text: '' },
+  messageCount = 0,
+): HistoryConversation {
+  return {
+    ...conversation,
+    created_at: conversation.created_at || new Date().toISOString(),
+    updated_at:
+      conversation.updated_at ||
+      conversation.created_at ||
+      new Date().toISOString(),
+    first_message: {
+      text: firstMessage.text ?? '',
+      images: firstMessage.images ?? [],
+    },
+    message_count: messageCount,
+  };
+}
+
+export async function listConversations(
+  userId: string,
+): Promise<Conversation[]> {
+  if (isLocalApiEnabled) {
+    return localApiRequestJson<Conversation[]>('/api/v1/conversations');
+  }
+
+  const { data, error } = await supabase
+    .from('conversations')
+    .select('*')
+    .order('updated_at', { ascending: false })
+    .eq('user_id', userId);
+
+  if (error) throw error;
+
+  return data as Conversation[];
+}
+
+export async function listRecentConversations(
+  userId: string,
+  limit = 10,
+): Promise<Conversation[]> {
+  if (isLocalApiEnabled) {
+    const conversations = await listConversations(userId);
+    return conversations.slice(0, limit);
+  }
+
+  const { data, error } = await supabase
+    .from('conversations')
+    .select('*')
+    .order('updated_at', { ascending: false })
+    .eq('user_id', userId)
+    .limit(limit);
+
+  if (error) throw error;
+
+  return data as Conversation[];
+}
+
+export async function listHistoryConversations(
+  userId: string,
+): Promise<HistoryConversation[]> {
+  if (isLocalApiEnabled) {
+    const conversations = await listConversations(userId);
+
+    return Promise.all(
+      conversations.map(async (conversation) => {
+        const messages = await localApiRequestJson<Message[]>(
+          `/api/v1/conversations/${conversation.id}/messages`,
+        );
+        const firstMessage = messages[0]?.content ?? { text: '' };
+
+        return toHistoryConversation(
+          conversation,
+          firstMessage,
+          messages.length,
+        );
+      }),
+    );
+  }
+
+  const { data: conversationsData, error: conversationsError } = await supabase
+    .from('conversations')
+    .select(`*, first_message:messages(content), messagesCount:messages(count)`)
+    .eq('user_id', userId)
+    .order('updated_at', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(1, { referencedTable: 'first_message' });
+
+  if (conversationsError) throw conversationsError;
+
+  return conversationsData.map((conv) => {
+    const rawContent = conv.first_message?.[0]?.content;
+    const firstMessageContent =
+      typeof rawContent === 'object' && rawContent !== null
+        ? (rawContent as Content)
+        : { text: '' };
+    const messageCount = conv.messagesCount?.[0]?.count ?? 0;
+
+    return toHistoryConversation(
+      conv as Conversation,
+      firstMessageContent,
+      messageCount,
+    );
+  });
+}
+
+export async function updateConversationFields(
+  conversationId: string,
+  payload: ConversationUpdatePayload,
+) {
+  if (isLocalApiEnabled) {
+    return localApiRequestJson<Conversation, ConversationUpdatePayload>(
+      `/api/v1/conversations/${conversationId}`,
+      {
+        method: 'PATCH',
+        body: payload,
+      },
+    );
+  }
+
+  const { data, error } = await supabase
+    .from('conversations')
+    .update(payload)
+    .eq('id', conversationId)
+    .select()
+    .single();
+
+  if (error) throw error;
+
+  return data as Conversation;
+}
+
+export async function deleteConversationById(
+  conversationId: string,
+  userId: string,
+) {
+  if (isLocalApiEnabled) {
+    await localApiRequestJson<void>(
+      `/api/v1/conversations/${conversationId}`,
+      {
+        method: 'DELETE',
+      },
+    );
+    return;
+  }
+
+  const { error } = await supabase
+    .from('conversations')
+    .delete()
+    .eq('id', conversationId);
+
+  if (error) throw error;
+
+  supabase.storage
+    .from('images')
+    .list(`${userId}/${conversationId}`)
+    .then(({ data: list }) => {
+      if (list) {
+        const filesToRemove = list.map(
+          (file) => `${userId}/${conversationId}/${file.name}`,
+        );
+        supabase.storage.from('images').remove(filesToRemove);
+      }
+    });
+}
 
 export function useConversation() {
   const { id: conversationId } = useParams();
@@ -32,6 +216,12 @@ export function useConversation() {
         }
         if (!user?.id) {
           throw new Error('User must be authenticated');
+        }
+
+        if (isLocalApiEnabled) {
+          return localApiRequestJson<Conversation>(
+            `/api/v1/conversations/${conversationId}`,
+          );
         }
 
         const { data, error } = await supabase
@@ -53,6 +243,22 @@ export function useConversation() {
   const { mutate: updateConversation, mutateAsync: updateConversationAsync } =
     useMutation({
       mutationFn: async (conversation: Conversation) => {
+        if (isLocalApiEnabled) {
+          return localApiRequestJson<Conversation, Partial<Conversation>>(
+            `/api/v1/conversations/${conversation.id}`,
+            {
+              method: 'PATCH',
+              body: {
+                title: conversation.title,
+                type: conversation.type,
+                privacy: conversation.privacy,
+                settings: conversation.settings,
+                current_message_leaf_id: conversation.current_message_leaf_id,
+              },
+            },
+          );
+        }
+
         const { data, error } = await supabase
           .from('conversations')
           .update(conversation)
@@ -118,6 +324,14 @@ export async function generateConversationTitle(
   conversationId: string,
   content: Content,
 ): Promise<string> {
+  if (isLocalApiEnabled) {
+    const data = await generateLocalConversationTitle({
+      conversationId,
+      content,
+    });
+    return data.title || 'New Conversation';
+  }
+
   const {
     data: { session },
   } = await supabase.auth.getSession();

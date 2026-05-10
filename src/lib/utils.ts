@@ -239,17 +239,8 @@ export const PARAMETRIC_MODELS: ModelConfig[] = [
   {
     id: 'google/gemini-3.1-pro-preview',
     name: 'Gemini 3.1 Pro',
-    description: 'Latest Google model with excellent multi-modal capabilities',
+    description: 'Vision-capable model through OpenRouter',
     provider: 'Google',
-    supportsTools: true,
-    supportsThinking: true,
-    supportsVision: true,
-  },
-  {
-    id: 'anthropic/claude-opus-4.7',
-    name: 'Claude Opus 4.7',
-    description: 'Most powerful Anthropic model for complex reasoning',
-    provider: 'Anthropic',
     supportsTools: true,
     supportsThinking: true,
     supportsVision: true,
@@ -257,7 +248,7 @@ export const PARAMETRIC_MODELS: ModelConfig[] = [
   {
     id: 'openai/gpt-5.5',
     name: 'GPT-5.5',
-    description: 'Latest OpenAI model for reliable CAD generation',
+    description: 'Vision-capable model for reference-image CAD generation',
     provider: 'OpenAI',
     supportsTools: true,
     supportsThinking: true,
@@ -266,7 +257,7 @@ export const PARAMETRIC_MODELS: ModelConfig[] = [
   {
     id: 'deepseek/deepseek-v4-pro',
     name: 'DeepSeek V4 Pro',
-    description: 'Long-context MoE model for complex reasoning and code',
+    description: 'Text-only model for CAD code generation',
     provider: 'DeepSeek',
     supportsTools: true,
     supportsThinking: true,

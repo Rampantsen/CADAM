@@ -33,24 +33,34 @@ import ShareView from './views/ShareView.tsx';
 import EditorView from './views/EditorView.tsx';
 import SettingsView from './views/SettingsView.tsx';
 import { isSupabaseConfigMissing } from './lib/supabase.ts';
+import { isLocalApiConfigMissing } from './lib/localApi.ts';
 
-Sentry.init({
-  dsn: import.meta.env.VITE_SENTRY_DSN ?? '',
-  integrations: [
-    Sentry.reactRouterV6BrowserTracingIntegration({
-      useEffect: React.useEffect,
-      useLocation,
-      useNavigationType,
-      createRoutesFromChildren,
-      matchRoutes,
-    }),
-  ],
-  environment: import.meta.env.VITE_SENTRY_ENVIRONMENT ?? 'local',
-  tracesSampleRate: 1.0,
-});
+const sentryDsn = import.meta.env.VITE_SENTRY_DSN ?? '';
+const posthogKey = import.meta.env.VITE_POSTHOG_PROJECT_KEY ?? '';
+const hasRealSentryDsn =
+  sentryDsn && !sentryDsn.startsWith('<') && sentryDsn.includes('://');
+const hasRealPosthogKey = posthogKey && !posthogKey.startsWith('<');
 
-const sentryCreateBrowserRouter =
-  Sentry.wrapCreateBrowserRouterV6(createBrowserRouter);
+if (hasRealSentryDsn) {
+  Sentry.init({
+    dsn: sentryDsn,
+    integrations: [
+      Sentry.reactRouterV6BrowserTracingIntegration({
+        useEffect: React.useEffect,
+        useLocation,
+        useNavigationType,
+        createRoutesFromChildren,
+        matchRoutes,
+      }),
+    ],
+    environment: import.meta.env.VITE_SENTRY_ENVIRONMENT ?? 'local',
+    tracesSampleRate: 1.0,
+  });
+}
+
+const createAppRouter = hasRealSentryDsn
+  ? Sentry.wrapCreateBrowserRouterV6(createBrowserRouter)
+  : createBrowserRouter;
 
 const MissingConfig = () => (
   <div className="flex min-h-screen items-center justify-center bg-adam-bg-secondary-dark">
@@ -61,7 +71,7 @@ const MissingConfig = () => (
   </div>
 );
 
-const router = sentryCreateBrowserRouter(
+const router = createAppRouter(
   [
     {
       path: '/',
@@ -127,20 +137,37 @@ const router = sentryCreateBrowserRouter(
   { future: { v7_relativeSplatPath: true }, basename: '/cadam' },
 );
 
+const isAppConfigMissing = isSupabaseConfigMissing && isLocalApiConfigMissing;
+const posthogApiHost =
+  hasRealPosthogKey && !isSupabaseConfigMissing
+    ? `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/jackson-pollock`
+    : undefined;
+
+const AppRouter = () => (
+  <RouterProvider router={router} future={{ v7_startTransition: true }} />
+);
+
+const AppWithProviders = () =>
+  hasRealPosthogKey ? (
+    <PostHogProvider
+      apiKey={posthogKey}
+      options={{
+        ...(posthogApiHost ? { api_host: posthogApiHost } : {}),
+        person_profiles: 'always',
+      }}
+    >
+      <AppRouter />
+    </PostHogProvider>
+  ) : (
+    <AppRouter />
+  );
+
 createRoot(document.getElementById('root')!).render(
-  isSupabaseConfigMissing ? (
+  isAppConfigMissing ? (
     <MissingConfig />
   ) : (
     <StrictMode>
-      <PostHogProvider
-        apiKey={import.meta.env.VITE_POSTHOG_PROJECT_KEY ?? ''}
-        options={{
-          api_host: `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/jackson-pollock`,
-          person_profiles: 'always',
-        }}
-      >
-        <RouterProvider router={router} future={{ v7_startTransition: true }} />
-      </PostHogProvider>
+      <AppWithProviders />
     </StrictMode>
   ),
 );
