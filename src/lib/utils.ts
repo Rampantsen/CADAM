@@ -310,7 +310,7 @@ export function getBackupModel({
     return parentMessage.content.model;
   }
   if (type === 'parametric') {
-    return 'fast';
+    return 'openai/gpt-5.5';
   } else {
     return 'quality';
   }

@@ -9,6 +9,7 @@ import {
   clearLocalAccessToken,
   getLocalAccessToken,
   isLocalApiEnabled,
+  LocalApiError,
   localApiJson,
   loginLocal,
   LocalAuthResponse,
@@ -84,6 +85,13 @@ function readStoredSession() {
   }
 }
 
+function isInvalidLocalAuthError(error: unknown) {
+  return (
+    error instanceof LocalApiError &&
+    (error.status === 401 || error.status === 403)
+  );
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(readStoredSession);
   const [user, setUser] = useState<User | null>(null);
@@ -97,6 +105,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (isLocalApiEnabled) {
       const initializeLocalAuth = async () => {
         const token = getLocalAccessToken();
+        const storedSession = readStoredSession();
         if (!token) {
           setSession(null);
           setUser(null);
@@ -120,11 +129,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setSession(localSession);
           setUser(localSession.user);
           localStorage.setItem(LOCAL_SESSION_KEY, JSON.stringify(localSession));
-        } catch {
-          clearLocalAccessToken();
-          localStorage.removeItem(LOCAL_SESSION_KEY);
-          setSession(null);
-          setUser(null);
+        } catch (error) {
+          if (isInvalidLocalAuthError(error) || !storedSession?.user) {
+            clearLocalAccessToken();
+            localStorage.removeItem(LOCAL_SESSION_KEY);
+            setSession(null);
+            setUser(null);
+            return;
+          }
+
+          setSession(storedSession);
+          setUser(storedSession.user);
         } finally {
           setIsLoading(false);
         }

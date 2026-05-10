@@ -16,6 +16,26 @@ export type LocalApiRequestOptions = {
   includeAuth?: boolean;
 };
 
+export class LocalApiError extends Error {
+  status: number;
+  statusText: string;
+
+  constructor(message: string, status: number, statusText: string) {
+    super(message);
+    this.name = 'LocalApiError';
+    this.status = status;
+    this.statusText = statusText;
+  }
+}
+
+function createLocalApiError(prefix: string, response: Response) {
+  return new LocalApiError(
+    `${prefix}: ${response.status} ${response.statusText}`,
+    response.status,
+    response.statusText,
+  );
+}
+
 export type JsonLineParseError = {
   line: string;
   error: unknown;
@@ -195,9 +215,7 @@ export async function localApiJson<TResponse, TBody = unknown>(
   );
 
   if (!response.ok) {
-    throw new Error(
-      `Local API request failed: ${response.status} ${response.statusText}`,
-    );
+    throw createLocalApiError('Local API request failed', response);
   }
 
   return (await response.json()) as TResponse;
@@ -227,9 +245,7 @@ export async function localApiRequestJson<TResponse, TBody = unknown>(
   );
 
   if (!response.ok) {
-    throw new Error(
-      `Local API request failed: ${response.status} ${response.statusText}`,
-    );
+    throw createLocalApiError('Local API request failed', response);
   }
 
   if (response.status === 204) {
@@ -280,9 +296,7 @@ export async function localApiMultipart<TResponse>(
   );
 
   if (!response.ok) {
-    throw new Error(
-      `Local API upload failed: ${response.status} ${response.statusText}`,
-    );
+    throw createLocalApiError('Local API upload failed', response);
   }
 
   return (await response.json()) as TResponse;
@@ -354,9 +368,7 @@ export async function streamLocalJsonLines<T>(
   );
 
   if (!response.ok) {
-    throw new Error(
-      `Local API stream failed: ${response.status} ${response.statusText}`,
-    );
+    throw createLocalApiError('Local API stream failed', response);
   }
 
   if (response.headers.get('Content-Type')?.includes('application/json')) {
@@ -443,9 +455,7 @@ export async function downloadLocalConversationFile(
   );
 
   if (!response.ok) {
-    throw new Error(
-      `Local API download failed: ${response.status} ${response.statusText}`,
-    );
+    throw createLocalApiError('Local API download failed', response);
   }
 
   return response.blob();

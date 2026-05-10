@@ -2,12 +2,13 @@ import ParametricView from './ParametricView';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Content, Message, Parameter } from '@shared/types';
 import { supabase } from '@/lib/supabase';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { updateParameter } from '@/lib/utils';
 import { useConversation } from '@/contexts/ConversationContext';
 import { useCurrentMessage } from '@/contexts/CurrentMessageContext';
 import Tree from '@shared/Tree';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
+import { ExportScadFile } from '@/hooks/useOpenSCAD';
 
 export default function ParametricShareView() {
   const { conversation } = useConversation();
@@ -15,6 +16,16 @@ export default function ParametricShareView() {
   // single-color STL mesh.
   const color = '#00A6FF';
   const [currentOutput, setCurrentOutput] = useState<Blob | undefined>();
+  const [currentOffOutput, setCurrentOffOutput] = useState<Blob | undefined>();
+  const [exportScadFile, setExportScadFile] = useState<
+    ExportScadFile | undefined
+  >();
+  const handleExportScadFileChange = useCallback(
+    (exporter: ExportScadFile | undefined) => {
+      setExportScadFile(() => exporter);
+    },
+    [],
+  );
   const { setCurrentMessage } = useCurrentMessage();
   const queryClient = useQueryClient();
   const isTabletOrMobile = useMediaQuery('(max-width: 1024px)');
@@ -106,6 +117,10 @@ export default function ParametricShareView() {
       isLoading={false}
       currentOutput={currentOutput}
       setCurrentOutput={setCurrentOutput}
+      currentOffOutput={currentOffOutput}
+      setCurrentOffOutput={setCurrentOffOutput}
+      exportScadFile={exportScadFile}
+      setExportScadFile={handleExportScadFileChange}
     />
   );
 }

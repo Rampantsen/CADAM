@@ -20,6 +20,7 @@ import Tree from '@shared/Tree';
 import { useRequestCancellation } from '@/hooks/useRequestCancellation';
 import posthog from 'posthog-js';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
+import { ExportScadFile } from '@/hooks/useOpenSCAD';
 
 export function ParametricEditorView() {
   const { conversation, updateConversationAsync } = useConversation();
@@ -28,6 +29,16 @@ export function ParametricEditorView() {
   const { billing } = useAuth();
   const totalTokens = billing?.tokens.total ?? 0;
   const [currentOutput, setCurrentOutput] = useState<Blob | undefined>();
+  const [currentOffOutput, setCurrentOffOutput] = useState<Blob | undefined>();
+  const [exportScadFile, setExportScadFile] = useState<
+    ExportScadFile | undefined
+  >();
+  const handleExportScadFileChange = useCallback(
+    (exporter: ExportScadFile | undefined) => {
+      setExportScadFile(() => exporter);
+    },
+    [],
+  );
   // Brand fallback color used when OFF parsing fails and we drop back to
   // the single-color STL mesh.
   const color = '#00A6FF';
@@ -199,6 +210,10 @@ export function ParametricEditorView() {
       isLoading={isLoading}
       currentOutput={currentOutput}
       setCurrentOutput={setCurrentOutput}
+      currentOffOutput={currentOffOutput}
+      setCurrentOffOutput={setCurrentOffOutput}
+      exportScadFile={exportScadFile}
+      setExportScadFile={handleExportScadFileChange}
       color={color}
       changeParameters={changeParameters}
       stopGenerating={stopGenerating}

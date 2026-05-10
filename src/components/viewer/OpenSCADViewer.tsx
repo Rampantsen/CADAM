@@ -1,4 +1,4 @@
-import { useOpenSCAD } from '@/hooks/useOpenSCAD';
+import { ExportScadFile, useOpenSCAD } from '@/hooks/useOpenSCAD';
 import { useEffect, useState, useContext, useRef } from 'react';
 import { ThreeScene } from '@/components/viewer/ThreeScene';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
@@ -44,7 +44,11 @@ function disposeGroup(group: Group) {
 interface OpenSCADPreviewProps {
   scadCode: string | null;
   color: string;
-  onOutputChange?: (output: Blob | undefined) => void;
+  onOutputChange?: (
+    output: Blob | undefined,
+    offOutput: Blob | undefined,
+  ) => void;
+  onExporterChange?: (exporter: ExportScadFile | undefined) => void;
   fixError?: (error: OpenSCADError) => void;
   isMobile?: boolean;
   backgroundColor?: string;
@@ -54,12 +58,14 @@ export function OpenSCADPreview({
   scadCode,
   color,
   onOutputChange,
+  onExporterChange,
   fixError,
   isMobile,
   backgroundColor,
 }: OpenSCADPreviewProps) {
   const {
     compileScad,
+    exportScadFile,
     writeFile,
     isCompiling,
     output,
@@ -88,6 +94,15 @@ export function OpenSCADPreview({
   useEffect(() => {
     fallbackColorRef.current = color;
   }, [color]);
+
+  useEffect(() => {
+    onOutputChange?.(output, offOutput);
+  }, [output, offOutput, onOutputChange]);
+
+  useEffect(() => {
+    onExporterChange?.(exportScadFile);
+    return () => onExporterChange?.(undefined);
+  }, [exportScadFile, onExporterChange]);
 
   useEffect(() => {
     if (!scadCode) return;
@@ -122,8 +137,6 @@ export function OpenSCADPreview({
   }, [scadCode, compileScad, writeFile, meshFilesCtx]);
 
   useEffect(() => {
-    onOutputChange?.(output);
-
     // Mirror the colored-group pattern: every path that clears geometry
     // state must first release the previous vertex buffers, otherwise
     // recompiles + no-output transitions leak VRAM the same way the group
@@ -160,7 +173,7 @@ export function OpenSCADPreview({
     } else {
       clearGeometry();
     }
-  }, [output, onOutputChange]);
+  }, [output]);
 
   useEffect(() => {
     let cancelled = false;

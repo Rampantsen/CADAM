@@ -40,6 +40,27 @@ export type ToolCall = {
   result?: { id: string; fileType?: MeshFileType };
 };
 
+export type TokenUsage = {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+  reasoning_tokens?: number;
+};
+
+export type ModelCallUsage = {
+  provider?: string;
+  model?: string;
+  requested_model?: string;
+  duration_ms?: number;
+  finish_reason?: string | null;
+  token_usage?: TokenUsage;
+};
+
+export type MessageUsage = {
+  duration_ms?: number;
+  model_call?: ModelCallUsage;
+};
+
 export type Content = {
   text?: string;
   model?: Model;
@@ -63,6 +84,8 @@ export type Content = {
   polygonCount?: number;
   // File format preference for quad topology models
   preferredFormat?: 'glb' | 'fbx';
+  // Local backend usage/timing metadata for generated assistant messages.
+  usage?: MessageUsage;
 };
 
 export type ParametricArtifact = {
@@ -70,7 +93,35 @@ export type ParametricArtifact = {
   version: string;
   code: string;
   parameters: Parameter[];
+  parts?: ParametricPart[];
+  articulations?: ParametricArticulation[];
   suggestions?: string[];
+};
+
+export type ParametricPart = {
+  id: string;
+  name: string;
+  module: string;
+  parentId?: string | null;
+  color?: string;
+  role?: string;
+};
+
+export type ParametricArticulationType =
+  | 'hinge'
+  | 'slider'
+  | 'revolute'
+  | 'prismatic';
+
+export type ParametricArticulation = {
+  id: string;
+  partId: string;
+  parentId?: string | null;
+  type: ParametricArticulationType;
+  axis?: [number, number, number];
+  origin?: [number, number, number];
+  range?: [number, number];
+  defaultValue?: number;
 };
 
 export type ParameterOption = { value: string | number; label: string };

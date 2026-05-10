@@ -4,7 +4,10 @@ import { Content, Message, Model } from '@shared/types';
 import TextAreaChat from '@/components/TextAreaChat';
 import { SuggestionPills } from '@/components/chat/SuggestionPills';
 import { useIsMobile } from '@/hooks/useIsMobile';
-import { AssistantMessage } from '@/components/chat/AssistantMessage';
+import {
+  AssistantMessage,
+  type UsageSummary,
+} from '@/components/chat/AssistantMessage';
 import { UserMessage } from '@/components/chat/UserMessage';
 import { ShareContent } from '@/components/ui/ShareContent';
 import { useNavigate } from 'react-router-dom';
@@ -175,6 +178,29 @@ export function ChatSection({
     [conversation, updateConversation],
   );
 
+  const usageByMessageId = useMemo(() => {
+    const summaries = new Map<string, UsageSummary>();
+    let durationMs = 0;
+    let totalTokens = 0;
+
+    for (const message of messages) {
+      const usage = message.content.usage;
+      const tokenUsage = usage?.model_call?.token_usage;
+      const messageTokens =
+        tokenUsage?.total_tokens ??
+        (tokenUsage?.prompt_tokens ?? 0) + (tokenUsage?.completion_tokens ?? 0);
+
+      durationMs += usage?.duration_ms ?? usage?.model_call?.duration_ms ?? 0;
+      totalTokens += messageTokens;
+
+      if (message.role === 'assistant') {
+        summaries.set(message.id, { durationMs, totalTokens });
+      }
+    }
+
+    return summaries;
+  }, [messages]);
+
   return (
     <div className="flex h-full w-full flex-col items-center overflow-hidden border-r border-neutral-700 bg-adam-bg-secondary-dark dark:border-gray-800">
       <div className="flex w-full items-center justify-between bg-transparent p-3 pl-12 dark:border-gray-800">
@@ -243,6 +269,7 @@ export function ChatSection({
                     changeRating={changeRating}
                     isLoading={isLoading}
                     currentVersion={getCurrentVersion(index)}
+                    conversationUsage={usageByMessageId.get(message.id)}
                     restoreMessage={restoreMessage}
                     limitReached={limitReached}
                     onRetry={retryMessage}

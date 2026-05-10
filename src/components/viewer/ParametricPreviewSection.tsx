@@ -3,11 +3,16 @@ import { useCurrentMessage } from '@/contexts/CurrentMessageContext';
 import Loader from '@/components/viewer/Loader';
 import { OpenSCADPreview } from './OpenSCADViewer';
 import OpenSCADError from '@/lib/OpenSCADError';
+import { ExportScadFile } from '@/hooks/useOpenSCAD';
 
 interface ParametricPreviewSectionProps {
   isLoading: boolean;
   color: string;
-  onOutputChange?: (output: Blob | undefined) => void;
+  onOutputChange?: (
+    output: Blob | undefined,
+    offOutput: Blob | undefined,
+  ) => void;
+  onExporterChange?: (exporter: ExportScadFile | undefined) => void;
   fixError?: (error: OpenSCADError) => void;
   isMobile?: boolean;
 }
@@ -16,6 +21,7 @@ export function ParametricPreviewSection({
   isLoading,
   color,
   onOutputChange,
+  onExporterChange,
   fixError,
   isMobile,
 }: ParametricPreviewSectionProps) {
@@ -39,6 +45,7 @@ export function ParametricPreviewSection({
               scadCode={message.content.artifact.code}
               color={color}
               onOutputChange={onOutputChange}
+              onExporterChange={onExporterChange}
               fixError={fixError}
             />
           )}

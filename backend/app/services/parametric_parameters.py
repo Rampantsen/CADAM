@@ -40,6 +40,8 @@ def parse_parameters(script: str) -> list[dict[str, Any]]:
     for group, code in group_sections:
         for match in parameter_regex.finditer(code):
             name = match.group(1)
+            if name.startswith("cadam_"):
+                continue
             raw_value = match.group(2)
             type_and_value = _convert_type(raw_value)
             if type_and_value is None:

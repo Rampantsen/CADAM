@@ -17,6 +17,7 @@ import { ChevronsRight } from 'lucide-react';
 import { TreeNode } from '@shared/Tree';
 import { ParametricPreviewSection } from '@/components/viewer/ParametricPreviewSection';
 import { ParametricPreviewDialog } from '@/components/viewer/ParametricPreviewDialog';
+import { ExportScadFile } from '@/hooks/useOpenSCAD';
 
 // Panel size constants
 const PANEL_SIZES = {
@@ -44,6 +45,10 @@ interface ParametricViewProps {
   isLoading: boolean;
   currentOutput: Blob | undefined;
   setCurrentOutput: (output: Blob | undefined) => void;
+  currentOffOutput?: Blob;
+  setCurrentOffOutput?: (output: Blob | undefined) => void;
+  exportScadFile?: ExportScadFile;
+  setExportScadFile?: (exporter: ExportScadFile | undefined) => void;
   color: string;
   limitReached?: boolean;
   changeParameters: (message: Message | null, parameters: Parameter[]) => void;
@@ -61,6 +66,10 @@ export default function ParametricView({
   isLoading,
   currentOutput,
   setCurrentOutput,
+  currentOffOutput,
+  setCurrentOffOutput,
+  exportScadFile,
+  setExportScadFile,
   color,
   limitReached = false,
   changeParameters,
@@ -150,6 +159,19 @@ export default function ParametricView({
     () => !!currentMessage?.content.artifact,
     [currentMessage],
   );
+  const handleOutputChange = useCallback(
+    (output: Blob | undefined, offOutput: Blob | undefined) => {
+      setCurrentOutput(output);
+      setCurrentOffOutput?.(offOutput);
+    },
+    [setCurrentOutput, setCurrentOffOutput],
+  );
+  const handleExporterChange = useCallback(
+    (exporter: ExportScadFile | undefined) => {
+      setExportScadFile?.(exporter);
+    },
+    [setExportScadFile],
+  );
 
   // `react-resizable-panels` only honors `defaultSize` at initial mount, and
   // the PanelGroup's `autoSaveId` can restore a persisted size of 0 from a
@@ -219,10 +241,13 @@ export default function ParametricView({
             restoreMessage={restoreMessage}
           />
           <ParametricPreviewDialog
-            onOutputChange={setCurrentOutput}
+            onOutputChange={handleOutputChange}
+            onExporterChange={handleExporterChange}
+            exportScadFile={exportScadFile}
             fixError={!limitReached ? fixError : undefined}
             onSubmit={changeParameters}
             currentOutput={currentOutput}
+            currentOffOutput={currentOffOutput}
           />
         </div>
       ) : (
@@ -296,7 +321,8 @@ export default function ParametricView({
           >
             <ParametricPreviewSection
               isLoading={isLoading}
-              onOutputChange={setCurrentOutput}
+              onOutputChange={handleOutputChange}
+              onExporterChange={handleExporterChange}
               color={color}
               fixError={!limitReached ? fixError : undefined}
             />
@@ -363,6 +389,8 @@ export default function ParametricView({
                   }
                   onSubmit={changeParameters}
                   currentOutput={currentOutput}
+                  currentOffOutput={currentOffOutput}
+                  exportScadFile={exportScadFile}
                 />
               </div>
             )}

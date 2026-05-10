@@ -1,4 +1,4 @@
-import { Message, Model } from '@shared/types';
+import { Message, MessageUsage, Model, TokenUsage } from '@shared/types';
 import {
   ArrowUpRight,
   Box,
@@ -74,7 +74,13 @@ interface AssistantMessageProps {
   }) => void;
   restoreMessage?: (message: Message) => void;
   limitReached?: boolean;
+  conversationUsage?: UsageSummary;
 }
+
+export type UsageSummary = {
+  durationMs: number;
+  totalTokens: number;
+};
 
 const paymentRequiredMessages = {
   insufficient_tokens: <InsufficientTokensMessage />,
@@ -98,6 +104,7 @@ export function AssistantMessage({
   onRetry,
   onUpscale,
   limitReached,
+  conversationUsage,
 }: AssistantMessageProps) {
   const { conversation, updateConversation } = useConversation();
   const { currentMessage, setCurrentMessage } = useCurrentMessage();
@@ -164,6 +171,10 @@ export function AssistantMessage({
     () =>
       message.content.text ? linkParametricMode(message.content.text) : '',
     [message.content.text],
+  );
+  const messageUsage = useMemo(
+    () => summarizeMessageUsage(message.content.usage),
+    [message.content.usage],
   );
 
   return (
@@ -339,6 +350,10 @@ export function AssistantMessage({
                     currentVersion={currentVersion}
                   />
                 )}
+              <UsageMetadata
+                messageUsage={messageUsage}
+                conversationUsage={conversationUsage}
+              />
             </>
           )}
 
@@ -505,6 +520,71 @@ export function AssistantMessage({
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function getTokenTotal(usage: TokenUsage | undefined) {
+  if (!usage) return 0;
+  if (typeof usage.total_tokens === 'number') return usage.total_tokens;
+  return (usage.prompt_tokens ?? 0) + (usage.completion_tokens ?? 0);
+}
+
+function summarizeMessageUsage(usage: MessageUsage | undefined): UsageSummary {
+  return {
+    durationMs: usage?.duration_ms ?? usage?.model_call?.duration_ms ?? 0,
+    totalTokens: getTokenTotal(usage?.model_call?.token_usage),
+  };
+}
+
+function formatDuration(durationMs: number) {
+  if (!durationMs) return null;
+  if (durationMs < 1000) return `${durationMs}ms`;
+  const seconds = durationMs / 1000;
+  if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = Math.round(seconds % 60);
+  return `${minutes}m ${remainingSeconds}s`;
+}
+
+function formatTokens(tokens: number) {
+  if (!tokens) return null;
+  return new Intl.NumberFormat(undefined, {
+    notation: tokens >= 10000 ? 'compact' : 'standard',
+    maximumFractionDigits: 1,
+  }).format(tokens);
+}
+
+function UsageMetadata({
+  messageUsage,
+  conversationUsage,
+}: {
+  messageUsage: UsageSummary;
+  conversationUsage?: UsageSummary;
+}) {
+  const callDuration = formatDuration(messageUsage.durationMs);
+  const callTokens = formatTokens(messageUsage.totalTokens);
+  const threadDuration = formatDuration(conversationUsage?.durationMs ?? 0);
+  const threadTokens = formatTokens(conversationUsage?.totalTokens ?? 0);
+
+  if (!callDuration && !callTokens && !threadDuration && !threadTokens) {
+    return null;
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-1 text-[11px] text-adam-neutral-300">
+      {(callDuration || callTokens) && (
+        <span>
+          Call {callDuration ?? '-'}
+          {callTokens ? ` · ${callTokens} tokens` : ''}
+        </span>
+      )}
+      {(threadDuration || threadTokens) && (
+        <span>
+          Thread {threadDuration ?? '-'}
+          {threadTokens ? ` · ${threadTokens} tokens` : ''}
+        </span>
+      )}
     </div>
   );
 }

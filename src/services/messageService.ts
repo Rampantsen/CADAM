@@ -4,6 +4,10 @@ import {
   localApiRequestJson,
   streamLocalJsonLines,
 } from '@/lib/localApi';
+import {
+  isAbortError,
+  registerLocalAbortController,
+} from '@/lib/requestCancellation';
 import { createId } from '@/lib/ids';
 import { supabase } from '@/lib/supabase';
 import { Content, Conversation, Message, Model } from '@shared/types';
@@ -117,35 +121,76 @@ async function streamLocalChat(
   },
 ) {
   const newMessageId = createId();
+  const abortController = new AbortController();
+  const unregisterAbortController = registerLocalAbortController(
+    messageId,
+    abortController,
+  );
   let initialized = false;
 
-  return streamLocalJsonLines<Message>(
-    endpoint,
-    {
-      conversationId,
-      messageId,
-      model,
-      newMessageId,
-    },
-    {
-      onItem: async (data) => {
-        upsertStreamingMessage(queryClient, conversationId, data);
-        if (!initialized) {
-          await queryClient.cancelQueries({
-            queryKey: ['conversation', conversationId],
-          });
-          queryClient.setQueryData(
-            ['conversation', conversationId],
-            (oldConversation: Conversation) => ({
-              ...oldConversation,
-              current_message_leaf_id: data.id,
-            }),
-          );
-          initialized = true;
-        }
+  try {
+    return await streamLocalJsonLines<Message>(
+      endpoint,
+      {
+        conversationId,
+        messageId,
+        model,
+        newMessageId,
       },
-    },
-  );
+      {
+        signal: abortController.signal,
+        onItem: async (data) => {
+          upsertStreamingMessage(queryClient, conversationId, data);
+          if (!initialized) {
+            await queryClient.cancelQueries({
+              queryKey: ['conversation', conversationId],
+            });
+            queryClient.setQueryData(
+              ['conversation', conversationId],
+              (oldConversation: Conversation) => ({
+                ...oldConversation,
+                current_message_leaf_id: data.id,
+              }),
+            );
+            initialized = true;
+          }
+        },
+      },
+    );
+  } catch (error) {
+    if (isAbortError(error)) {
+      const stoppedMessage = {
+        content: {
+          text: 'Generation stopped.',
+          model,
+          toolCalls: [],
+        },
+      };
+      queryClient.setQueryData(
+        ['messages', conversationId],
+        (oldMessages: Message[] | undefined) =>
+          oldMessages?.map((message) =>
+            message.id === newMessageId
+              ? { ...message, content: stoppedMessage.content }
+              : message,
+          ) ?? oldMessages,
+      );
+      try {
+        await localApiRequestJson<Message, typeof stoppedMessage>(
+          `/api/v1/conversations/${conversationId}/messages/${newMessageId}`,
+          {
+            method: 'PATCH',
+            body: stoppedMessage,
+          },
+        );
+      } catch {
+        // The request may be stopped before the assistant placeholder exists.
+      }
+    }
+    throw error;
+  } finally {
+    unregisterAbortController();
+  }
 }
 
 export const useMessagesQuery = () => {
@@ -403,6 +448,8 @@ export function useCreativeChatMutation({
       queryClient.invalidateQueries({ queryKey: ['userExtraData'] });
     },
     onError: async (error, { messageId }) => {
+      if (isAbortError(error)) return;
+
       Sentry.captureException(error, {
         extra: {
           hook: 'useCreativeChatMutation',
@@ -617,6 +664,8 @@ export function useParametricChatMutation({
       queryClient.invalidateQueries({ queryKey: ['userExtraData'] });
     },
     onError: async (error, { messageId }) => {
+      if (isAbortError(error)) return;
+
       Sentry.captureException(error, {
         extra: {
           hook: 'useParametricChatMutation',

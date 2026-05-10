@@ -31,17 +31,22 @@ import {
   downloadOpenSCADFile,
   downloadSTLFile,
 } from '@/utils/downloadUtils';
+import { ExportScadFile } from '@/hooks/useOpenSCAD';
 
 interface ParameterSectionProps {
   parameters: Parameter[];
   onSubmit: (message: Message | null, parameters: Parameter[]) => void;
   currentOutput?: Blob;
+  currentOffOutput?: Blob;
+  exportScadFile?: ExportScadFile;
 }
 
 export function ParameterSection({
   parameters,
   onSubmit,
   currentOutput,
+  currentOffOutput,
+  exportScadFile,
 }: ParameterSectionProps) {
   const { currentMessage } = useCurrentMessage();
   const [selectedFormat, setSelectedFormat] = useState<'stl' | 'glb' | 'scad'>(
@@ -129,7 +134,12 @@ export function ParameterSection({
     if (!currentOutput) return;
     setIsExportingGlb(true);
     try {
-      await downloadGLBFile(currentOutput, currentMessage);
+      await downloadGLBFile(
+        currentOutput,
+        currentMessage,
+        currentOffOutput,
+        exportScadFile,
+      );
     } catch (error) {
       console.error('[Download] Failed to export GLB:', error);
     } finally {

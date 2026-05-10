@@ -1,6 +1,17 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { WorkerMessage, WorkerMessageType } from '@/worker/types';
+import {
+  OpenSCADWorkerResponseData,
+  WorkerMessage,
+  WorkerMessageType,
+} from '@/worker/types';
 import OpenSCADError from '@/lib/OpenSCADError';
+import { Parameter } from '@shared/types';
+
+export type ExportScadFile = (
+  code: string,
+  fileType: 'stl' | 'off' | 'svg',
+  params?: Parameter[],
+) => Promise<Blob>;
 
 // Type for pending request resolvers
 type PendingRequest = {
@@ -145,8 +156,49 @@ export function useOpenSCAD() {
     [getWorker],
   );
 
+  const exportScadFile: ExportScadFile = useCallback(
+    async (
+      code: string,
+      fileType: 'stl' | 'off' | 'svg',
+      params: Parameter[] = [],
+    ): Promise<Blob> => {
+      const worker = getWorker();
+      const requestId = `export-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const responsePromise = new Promise<OpenSCADWorkerResponseData>(
+        (resolve, reject) => {
+          pendingRequestsRef.current.set(requestId, {
+            resolve: (value) => resolve(value as OpenSCADWorkerResponseData),
+            reject,
+          });
+        },
+      );
+
+      const message: WorkerMessage & { id: string } = {
+        id: requestId,
+        type: WorkerMessageType.EXPORT,
+        data: {
+          code,
+          params,
+          fileType,
+        },
+      };
+      worker.postMessage(message);
+
+      const response = await responsePromise;
+      const mimeType =
+        fileType === 'stl'
+          ? 'model/stl'
+          : fileType === 'svg'
+            ? 'image/svg+xml'
+            : 'text/plain';
+      return new Blob([response.output], { type: mimeType });
+    },
+    [getWorker],
+  );
+
   return {
     compileScad,
+    exportScadFile,
     writeFile,
     isCompiling,
     output,

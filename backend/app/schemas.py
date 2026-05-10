@@ -172,8 +172,12 @@ class BillingStatus(BaseModel):
 class ParametricChatRequest(BaseModel):
     conversationId: str
     messageId: str
-    model: str = "fast"
+    model: str = "openai/gpt-5.5"
     newMessageId: str | None = None
+
+
+class ChatCancelRequest(BaseModel):
+    messageId: str
 
 
 class TitleGenerateRequest(BaseModel):
